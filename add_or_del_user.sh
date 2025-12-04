@@ -1,52 +1,117 @@
 #!/bin/bash
 
-function warning() {
-    warning="\n\n*****WARNING*****\nYou have to enter the username you just entered in the 'Full Name []:' field.\n
-    You can leave the remaining fields blank.\n
-    Transactions will start within 45 seconds.\n"
-    
-    warnReboot="\n\n*****WARNING*****\nOnce the processes are complete, you have to reboot your device.\n
-    To log in again, you will need the new username and password you entered in the application.\n"
-    
-    echo -e $warning
-    echo -e $warnReboot
+print_adduser_hint() {
+    cat << 'EOF'
+
+***** INFO *****
+In the 'Full Name' field, you can enter anything (or leave blank).
+The only important thing is the *username* you type first.
+Press ENTER to skip unwanted fields.
+
+EOF
 }
 
-function add_user() {
-    read -p "New user: " newUser
-    
-    echo -e >> /etc/sudoers "$newUser    ALL=(ALL:ALL) ALL"
-    echo -e "Done.\n"
-    
-    warning
-    
-    sleep 20
-    
-    sudo adduser $newUser
-    
-    echo -e "\nYou should reboot your machine with 'reboot' command."
-}
+add_user() {
+    echo
+    read -rp "New username: " newUser
 
-function delete_user() {
-    read -p "Enter the username to delete: " username
-
-    if id "$username" &>/dev/null; then
-        userdel -r "$username"
-        echo "User $username has been deleted along with their home directory."
-    else
-        echo "User $username does not exist."
+    # Boş mu?
+    if [[ -z "$newUser" ]]; then
+        echo "[-] Username cannot be empty."
+        return 1
     fi
+
+    # Linux username format kontrolü (çok katı değil ama mantıklı)
+    if ! [[ "$newUser" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        echo "[-] Invalid username. Use lowercase letters, digits, '-' or '_'."
+        echo "    Example: cyberworm, test_user, demo123"
+        return 1
+    fi
+
+    # Kullanıcı zaten var mı?
+    if id "$newUser" &>/dev/null; then
+        echo "[-] User '$newUser' already exists."
+        return 1
+    fi
+
+    print_adduser_hint
+
+    # Kullanıcı oluştur
+    echo "[*] Creating user '$newUser'..."
+    adduser "$newUser" || {
+        echo "[-] adduser failed. Aborting."
+        return 1
+    }
+
+    # Sudo grubuna ekle (Kali/Debian standardı)
+    echo "[*] Adding '$newUser' to 'sudo' group..."
+    usermod -aG sudo "$newUser" || {
+        echo "[-] Failed to add '$newUser' to sudo group."
+        return 1
+    }
+
+    echo
+    echo "[+] User '$newUser' created and added to 'sudo' group."
+    echo "[+] You can now login as '$newUser' and use 'sudo <command>'."
+    echo
 }
 
-if [ "$(whoami)" != "root" ]; then
-    echo -e "Please, you have to be 'root' with 'sudo su' command.\n"
-    echo -e "Don't worry. We will give to your user a 'root' permission. We can't do this without 'root'.\n"
+delete_user() {
+    echo
+    read -rp "Enter the username to delete: " username
+
+    if [[ -z "$username" ]]; then
+        echo "[-] Username cannot be empty."
+        return 1
+    fi
+
+    if [[ "$username" == "root" ]]; then
+        echo "[-] You cannot delete the 'root' user."
+        return 1
+    fi
+
+    # Kendi hesabını yanlışlıkla silmemek için ufak koruma
+    currentUser="$(logname 2>/dev/null || echo "")"
+    if [[ -n "$currentUser" && "$username" == "$currentUser" ]]; then
+        echo "[-] Refusing to delete the currently logged-in user ('$currentUser')."
+        echo "    Log in as another user (or root) and try again if you really want this."
+        return 1
+    fi
+
+    if ! id "$username" &>/dev/null; then
+        echo "[-] User '$username' does not exist."
+        return 1
+    fi
+
+    echo
+    read -rp "Really delete user '$username' and their home directory? [y/N]: " confirm
+    case "$confirm" in
+        y|Y)
+            echo "[*] Deleting user '$username'..."
+            userdel -r "$username" && \
+                echo "[+] User '$username' has been deleted." || \
+                echo "[-] Failed to delete '$username'."
+            ;;
+        *)
+            echo "[*] Aborted. User '$username' was NOT deleted."
+            ;;
+    esac
+}
+
+if [[ "$(id -u)" -ne 0 ]]; then
+    echo
+    echo "[-] Please run this script as root."
+    echo "    Example: sudo su  # then run the script"
+    echo
     exit 1
 fi
 
-echo "Do you want to add or delete a user?"
+echo
+echo "===== User Management Menu ====="
+PS3="Choose an option (1-3): "
+
 select option in "Add User" "Delete User" "Exit"; do
-    case $option in
+    case "$option" in
         "Add User")
             add_user
             break
@@ -64,3 +129,7 @@ select option in "Add User" "Delete User" "Exit"; do
             ;;
     esac
 done
+
+echo
+echo "Done."
+echo
