@@ -15,20 +15,17 @@ add_user() {
     echo
     read -rp "New username: " newUser
 
-    # Boş mu?
     if [[ -z "$newUser" ]]; then
         echo "[-] Username cannot be empty."
         return 1
     fi
 
-    # Linux username format kontrolü (çok katı değil ama mantıklı)
     if ! [[ "$newUser" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
         echo "[-] Invalid username. Use lowercase letters, digits, '-' or '_'."
         echo "    Example: cyberworm, test_user, demo123"
         return 1
     fi
 
-    # Kullanıcı zaten var mı?
     if id "$newUser" &>/dev/null; then
         echo "[-] User '$newUser' already exists."
         return 1
@@ -36,14 +33,12 @@ add_user() {
 
     print_adduser_hint
 
-    # Kullanıcı oluştur
     echo "[*] Creating user '$newUser'..."
     adduser "$newUser" || {
         echo "[-] adduser failed. Aborting."
         return 1
     }
 
-    # Sudo grubuna ekle (Kali/Debian standardı)
     echo "[*] Adding '$newUser' to 'sudo' group..."
     usermod -aG sudo "$newUser" || {
         echo "[-] Failed to add '$newUser' to sudo group."
@@ -70,7 +65,6 @@ delete_user() {
         return 1
     fi
 
-    # Kendi hesabını yanlışlıkla silmemek için ufak koruma
     currentUser="$(logname 2>/dev/null || echo "")"
     if [[ -n "$currentUser" && "$username" == "$currentUser" ]]; then
         echo "[-] Refusing to delete the currently logged-in user ('$currentUser')."
