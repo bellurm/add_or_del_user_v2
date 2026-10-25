@@ -60,12 +60,16 @@ delete_user() {
         return 1
     fi
 
+    if ! [[ "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        echo '[-] Invalid username.' >&2
+        return 1
+    fi
     if [[ "$username" == "root" ]]; then
         echo "[-] You cannot delete the 'root' user."
         return 1
     fi
 
-    currentUser="$(logname 2>/dev/null || echo "")"
+    currentUser="${SUDO_USER:-$(logname 2>/dev/null || echo "")}"
     if [[ -n "$currentUser" && "$username" == "$currentUser" ]]; then
         echo "[-] Refusing to delete the currently logged-in user ('$currentUser')."
         echo "    Log in as another user (or root) and try again if you really want this."
@@ -82,9 +86,12 @@ delete_user() {
     case "$confirm" in
         y|Y)
             echo "[*] Deleting user '$username'..."
-            userdel -r "$username" && \
-                echo "[+] User '$username' has been deleted." || \
-                echo "[-] Failed to delete '$username'."
+            if userdel -r -- "$username"; then
+                echo "[+] User '$username' has been deleted."
+            else
+                echo "[-] Failed to delete '$username'." >&2
+                return 1
+            fi
             ;;
         *)
             echo "[*] Aborted. User '$username' was NOT deleted."
@@ -108,11 +115,11 @@ select option in "Add User" "Delete User" "Exit"; do
     case "$option" in
         "Add User")
             add_user
-            break
+            exit $?
             ;;
         "Delete User")
             delete_user
-            break
+            exit $?
             ;;
         "Exit")
             echo "Exiting script."
